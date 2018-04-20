@@ -1,55 +1,51 @@
 "use strict";
-
-const Database = require('./database');
-
-// setup server
 const Glue = require('glue');
+const Database = require('./database');
 const manifest = require('./manifest');
 
 const options = {
   relativeTo: __dirname
 };
 
-module.exports = function (cb) {
-  Glue.compose(manifest, options, (err, server) => {
-    if (err) {
-      throw err;
-    }
+module.exports = async function (cb) {
+  try {
+    const server = await Glue.compose(manifest, options);
+    await server.start();
 
     Database.connect();
 
-    server.route({
-      method: 'GET',
-      path: '/',
-      config: {
-        handler: function (request, reply) {
-          reply('Node Hapi REST Server');
-        }
-      }
-    });
 
-    server.start(() => {
-      if (process.send) {
-        process.send('online');
-      } else {
-        console.log('Server started!', server.info.uri, " at: ", (new Date()));
-      }
-    });
+    if (process.send) {
+      process.send('online');
+    } else {
+      console.log('Server started!', server.info.uri, " at: ", (new Date()));
+    }
 
     // Gracefull shut down
-    var stop = function () {
-      Database.close();
-      server.stop({timeout: 1000}, function () {
-        process.exit(0);
+    const stop = async function () {
+      try {
+        await server.stop();
+        Database.close();
         console.log('Server stopped');
-      });
+        process.exit(0);
+      }
+      catch (err) {
+        console.log(err)
+      }
     };
+
+    process.on('unhandledRejection', (reason, p) => {
+      console.log('Unhandled Rejection at: Promise', p, 'reason:', reason);
+    });
 
     process.on('SIGTERM', stop);
     process.on('SIGINT', stop);
 
-    if (cb) {
-      cb(server);
-    }
-  });
+    if (cb) return cb(server);
+  }
+
+  catch (err) {
+    console.error(err);
+    process.exit(0);
+  }
 };

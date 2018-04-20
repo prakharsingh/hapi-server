@@ -8,12 +8,8 @@ Mongoose.Promise = global.Promise;
 module.exports = {
   connect: () => {
     internals
-      .connect()
-      .on('error', error => {
-        console.log('[Error in connecting to database]', error);
-      })
-      .on('disconnected', internals.connect)
-      .once('open', () => {
+      .connect((err) => {
+        if(err) return console.log('[Error in connecting to database]', error);
         console.log('Database connected successfully!!!');
       });
   },
@@ -25,14 +21,13 @@ module.exports = {
 };
 
 const internals = {
-  connect: function () {
-    const options = {server: {socketOptions: {keepAlive: 1}}};
-    let connectionString = `mongodb://${Config.db.host}:${Config.db.port}/${Config.db.name}`;
-
-    if (process.env.NODE_ENV && process.env.NODE_ENV !== 'development') {
-      connectionString = `mongodb://${Config.db.userName}:${Config.db.password}@${Config.db.host}:${Config.db.port}/${Config.db.name}`;
-    }
-
-    return Mongoose.connect(connectionString, options).connection;
+  connect: function (cb) {
+    const options = {
+      poolSize: 10,
+      promiseLibrary: global.Promise,
+      autoReconnect: true,
+    };
+    const connectionString = `mongodb://${Config.db.host}:${Config.db.port}/${Config.db.name}`;
+    return Mongoose.connect(connectionString, options, cb);
   }
 };

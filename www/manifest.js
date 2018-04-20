@@ -1,38 +1,33 @@
 'use strict';
-const Path        = require('path');
-const Config      = require('config');
+const Path = require('path');
+const Config = require('config');
 
 module.exports = {
-  connections: [
-    {
-      host: Config.app.host,
-      port: Config.app.port,
-      routes: {
-       log: true
-      }
+  server: {
+    host: Config.app.host,
+    port: Config.app.port,
+    routes: {
+      cors: { origin: ["*"] },
+      log: { collect: true }
     }
-  ],
-  registrations: [
-    {
-      plugin: {
-        register: './plugins/auth',
+  },
+  register: {
+    plugins: [
+      {
+        plugin: './plugins/auth',
         options: {
           appSecret: Config.appSecret
         }
-      }
-    },
-    {
-      plugin: {
-        register: 'hapi-router',
+      },
+      {
+        plugin: 'hapi-router',
         options: {
           routes: '**/*.js',
           cwd: Path.join(__dirname, 'controllers')
         }
-      }
-    },
-    {
-      plugin: {
-        register: 'good',
+      },
+      {
+        plugin: 'good',
         options: {
           reporters: {
             myConsoleReporter: [{
@@ -45,6 +40,6 @@ module.exports = {
           }
         }
       }
-    }
-  ]
+    ],
+  }
 };

@@ -6,32 +6,37 @@ const Cookie = require('hapi-auth-cookie');
 const UserSchema = require('../models').UserSchema;
 const Roles = require('../constants/roles');
 
-exports.register = function (server, options, next) {
-  const settings = Object.assign({}, options);
+exports.plugin = {
+  pkg: require('./package.json'),
+  register: async (server, options) => {
+    try {
+      const settings = Object.assign({}, options);
 
-  server.register(Cookie, function (err) {
-    if (err) throw err;
+      await server.register(Cookie);
 
-    server.auth.strategy('session', 'cookie', 'try', {
-      password: settings.appSecret,
-      isSecure: false,
-      isHttpOnly: true,
-      clearInvalid: true,
-      validateFunc: function (request, session, callback) {
-        UserSchema
-          .canLogin(session.id)
-          .then(user => {
+      server.auth.strategy('session', 'cookie', {
+        password: settings.appSecret,
+        isSecure: false,
+        isHttpOnly: true,
+        clearInvalid: true,
+        validateFunc: async (request, session) => {
+          const user  = await UserSchema.canLogin(session.id);
+
+          const out = {
+            valid: !!user
+          };
+
+          if (out.valid) {
             user.scope = _.find(Roles, { role: _.max(user.roles) }).type;
-            callback(null, true, user)
-          })
-          .catch(err => callback(err));
-      }
-    });
-  });
-  next();
-};
+            out.credentials = user;
+          }
 
-exports.register.attributes = {
-  name: 'auth',
-  version: '0.0.1'
+          return out;
+        }
+      });
+    }
+    catch (error) {
+      throw new Error('Error in registering auth scheme!')
+    }
+  }
 };

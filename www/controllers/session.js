@@ -11,14 +11,13 @@ module.exports = [
     path: '/api/session',
     method: 'GET',
     config: {
-      handler: function (request, reply) {
-        request.server.auth.test('session', request, function (err, credentials) {
-          if(err) {
-            return reply(Boom.unauthorized('Session expired. Please login again.'));
-          }
-
-          reply({ credentials: credentials });
-        });
+      handler: async function (request) {
+        try {
+          return await request.server.auth.test('session', request);
+        }
+        catch (error) {
+          return Boom.unauthorized('Session expired. Please login again!');
+        }
       }
     }
   },
@@ -32,38 +31,27 @@ module.exports = [
           password: Joi.string().required().label('Password')
         }
       },
-      handler: function (request, reply) {
-        const payload = request.payload;
+      handler: async function (request) {
+        try {
+          const { payload } = request;
 
-        UserSchema
-          .findOne({ email: payload.email }, function (err, user) {
-            if(err) {
-              console.error('Error in finding user', err);
-              return reply(Boom.badRequest('Internal MongoDB error'));
-            }
+          const user = await UserSchema.findOne({ email: payload.email });
 
-            if(!user) return reply(Boom.unauthorized("Incorrect email/password!!!"));
+          if (!user) return Boom.unauthorized("Incorrect email/password!!!");
 
-            CryptHelper
-              .compareHash(payload.password, user.password)
-              .then(matched => {
-                if (matched) {
-                  UserSchema
-                    .canLogin(user._id)
-                    .then((cred) => {
-                      request.cookieAuth.set({ id: cred._id });
-                      reply({credentials: cred});
-                    })
-                    .catch(err => {
-                      console.log('[error sign in]', err);
-                      reply({ err: err }).code(401);
-                    });
-                } else {
-                  reply(Boom.unauthorized("Incorrect email/password!!!"))
-                }
-              })
-              .catch(err => reply(Boom.unauthorized("Incorrect email/password!!!")));
-          });
+          const matched = await CryptHelper.compareHash(payload.password, user.password);
+
+          if (matched) {
+            const credentials = await UserSchema.canLogin(user._id);
+            await request.cookieAuth.set({ id: credentials._id });
+            return { credentials };
+          } else {
+            return Boom.unauthorized("Incorrect email/password!!!");
+          }
+        }
+        catch (error) {
+          return Boom.internal(error);
+        }
       }
     }
   },
@@ -81,49 +69,39 @@ module.exports = [
           confirmPassword: Joi.string().min(8).optional().label('Confirm Password')
         }
       },
-      handler: function (request, reply) {
-        let payload = request.payload;
+      handler: async (request) => {
+        try {
+          let { payload } = request;
 
-        if(payload.password !== payload.confirmPassword) return reply(Boom.badRequest('Password and Confirm Password do not match!!!'));
+          if(payload.password !== payload.confirmPassword) {
+            return Boom.badRequest('Password and Confirm Password do not match!!!');
+          }
 
-        UserSchema
-          .findOne({ email: payload.email }, {}, function (err, exists) {
-            if(err) {
-              console.log('error in finding user', err);
-              return reply(Boom.internal('Internal MongoDB error'));
-            }
-            if(exists) {
-              return reply(Boom.badRequest('A user with this email already exists!!!'));
-            }
+          const existing = await UserSchema.findOne({ email: payload.email });
 
-            CryptHelper
-              .genHash(payload.password)
-              .then(hash => {
-                delete payload.confirmPassword;
+          if (existing) {
+            return Boom.badRequest('A user with this email already exists!!!');
+          }
 
-                payload.roles = [ 2 ];
-                payload.password = hash;
+          const hash = await CryptHelper.genHash(payload.password);
 
-                UserSchema
-                  .create(payload, function(err, user) {
-                    if(err) {
-                      console.log('Error in inserting new user', err);
-                      return reply(Boom.internal('Internal MongoDB error'));
-                    }
+          if(hash) {
+            delete payload.confirmPassword;
 
-                    UserSchema
-                      .canLogin(user._id)
-                      .then(cred => {
-                        reply({ credentials: cred });
-                      })
-                      .catch(err => {
-                        console.log('[error sign up]', err);
-                        reply(Boom.unauthorized(err));
-                      });
-                  })
-              })
-              .catch(err => console.error(err));
-          });
+            payload.roles = [ 2 ];
+            payload.password = hash;
+
+            const user = await UserSchema.create(payload);
+            const credentials = await UserSchema.canLogin(user._id);
+
+            if(credentials) return { credentials };
+          }
+        }
+        catch (error) {
+          console.log(error);
+          return Boom.internal(error);
+        }
+
       }
     }
   },
